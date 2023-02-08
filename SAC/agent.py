@@ -1,4 +1,5 @@
 import os
+import torch as T
 import torch
 import torch.nn.functional as F
 import numpy as np
@@ -19,8 +20,8 @@ class Agent():
         self.actor = ActorNetwork(alpha, input_dims, n_actions=n_actions, name='actor',
                                   max_action=env.action_space.high)
 
-        self.critic_1 = CriticNetwork(beta, input_dims, n_actions=n_actions name='critic_1')
-        self.critic_2 = CriticNetwork(beta, input_dims, n_actions=n_actions name='critic_2')
+        self.critic_1 = CriticNetwork(beta, input_dims, n_actions=n_actions, name='critic_1')
+        self.critic_2 = CriticNetwork(beta, input_dims, n_actions=n_actions, name='critic_2')
 
         self.value = ValueNetwork(beta, input_dims, name='value')
         self.target_value = ValueNetwork(beta, input_dims, name='target_value')
@@ -30,6 +31,7 @@ class Agent():
 
     def choose_action(self, observation):
         state = torch.Tensor([observation]).to(self.actor.device)
+
         actions, _ = self.actor.sample_normal(state, reparameterize=False)
         return actions.cpu().detach().numpy()[0]
 
@@ -72,13 +74,15 @@ class Agent():
         if self.memory.mem_cntr < self.batch_size:
             return
 
-        state, action, reward, new_state, done = self.memory.sample_buffer(self.batch_size)
+        state, action, reward, new_state, done = \
+            self.memory.sample_buffer(self.batch_size)
 
-        reward = torch.tensor(reward, dtype=torch.float).to(self.actor.device)
-        done = torch.tensor(done).to(self.actor.device)
-        state_ = torch.tensor(new_state, dtype=torch.float).to(self.actor.device)
-        state = torch.tensor(state, dtype=torch.float).to(self.actor.device)
-        action = torch.tensor(action, dtype=torch.float).to(self.actor.device)
+        reward = T.tensor(reward, dtype=T.float).to(self.actor.device)
+        done = T.tensor(done).to(self.actor.device)
+        state_ = T.tensor(new_state, dtype=T.float).to(self.actor.device)
+        state = T.tensor(state, dtype=T.float).to(self.actor.device)
+
+        action = T.tensor(action, dtype=T.float).to(self.actor.device)
 
         value = self.value(state).view(-1)
         value_ = self.target_value(state_).view(-1)
@@ -86,14 +90,14 @@ class Agent():
 
         actions, log_probs = self.actor.sample_normal(state, reparameterize=False)
         log_probs = log_probs.view(-1)
-        q1_new_policy = self.critic_1.foward(state, actions)
+        q1_new_policy = self.critic_1.forward(state, actions)
         q2_new_policy = self.critic_2.forward(state, actions)
-        critic_value = torch.min(q1_new_policy, q2_new_policy)
+        critic_value = T.min(q1_new_policy, q2_new_policy)
         critic_value = critic_value.view(-1)
 
         self.value.optimizer.zero_grad()
         value_target = critic_value - log_probs
-        value_loss = 0.5 * F.mse_loss(value,             value_target)
+        value_loss = 0.5 * F.mse_loss(value, value_target)
         value_loss.backward(retain_graph=True)
         self.value.optimizer.step()
 
@@ -101,17 +105,18 @@ class Agent():
         log_probs = log_probs.view(-1)
         q1_new_policy = self.critic_1.forward(state, actions)
         q2_new_policy = self.critic_2.forward(state, actions)
-        critic_value = torch.min(q1_new_policy, q2_new_policy)
+        critic_value = T.min(q1_new_policy, q2_new_policy)
         critic_value = critic_value.view(-1)
 
         actor_loss = log_probs - critic_value
-        actor_loss = torch.mean(actor_loss)
-        self.actor.otpimizer.zero_grad()
+        actor_loss = T.mean(actor_loss)
+        self.actor.optimizer.zero_grad()
         actor_loss.backward(retain_graph=True)
+        self.actor.optimizer.step()
 
         self.critic_1.optimizer.zero_grad()
         self.critic_2.optimizer.zero_grad()
-        q_hat = self.scale*reward + self.gamma*value_
+        q_hat = self.scale * reward + self.gamma * value_
         q1_old_policy = self.critic_1.forward(state, action).view(-1)
         q2_old_policy = self.critic_2.forward(state, action).view(-1)
         critic_1_loss = 0.5 * F.mse_loss(q1_old_policy, q_hat)
@@ -123,7 +128,6 @@ class Agent():
         self.critic_2.optimizer.step()
 
         self.update_network_parameters()
-
 
 
 

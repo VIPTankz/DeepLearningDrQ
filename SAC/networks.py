@@ -86,6 +86,7 @@ class ActorNetwork(nn.Module):
                  fc2_dims=256, n_actions=2, name='actor', chkpt_dir='tmp/sac'):
         super(ActorNetwork, self).__init__()
         self.input_dims = input_dims
+        self.max_action = max_action
         self.fc1_dims = fc1_dims
         self.fc2_dims = fc2_dims
         self.n_actions = n_actions
@@ -93,8 +94,7 @@ class ActorNetwork(nn.Module):
         self.checkpoint_dir = chkpt_dir
         self.checkpoint_file = os.path.join(self.checkpoint_dir, name+'_sac')
         self.reparam_noise = 1e-6
-
-        self.fc1 = nn.Linear(*self.input_dims, self.fc1_dims)
+        self.fc1 = nn.Linear(self.input_dims[0], self.fc1_dims)
         self.fc2 = nn.Linear(self.fc1_dims, self.fc2_dims)
         self.mu = nn.Linear(self.fc2_dims, self.n_actions)
         self.sigma = nn.Linear(self.fc2_dims, self.n_actions)
@@ -105,13 +105,16 @@ class ActorNetwork(nn.Module):
         self.to(self.device)
 
     def forward(self, state):
-        prob = self.fc1(state)
-        prob = F.relu(prob)
-        prob = self.fc2(prob)
-        prob = F.relu(prob)
+        prob1 = self.fc1(state)
+        prob2 = F.relu(prob1)
+        prob3 = self.fc2(prob2)
+        prob4 = F.relu(prob3)
 
-        mu = self.mu(prob)
-        sigma = self.sigma(prob)
+        mu = self.mu(prob4)
+        sigma = self.sigma(prob4)
+        if torch.isnan(sigma).any():
+            print(state)
+            print(prob1)
 
         sigma = torch.clamp(sigma, min=self.reparam_noise, max=1)
 
@@ -119,6 +122,7 @@ class ActorNetwork(nn.Module):
 
     def sample_normal(self, state, reparameterize=True):
         mu, sigma = self.forward(state)
+
         probabilities = Normal(mu, sigma)
 
         if reparameterize:
