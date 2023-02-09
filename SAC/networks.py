@@ -26,6 +26,7 @@ class CriticNetwork(nn.Module):
         self.optimizer = optim.Adam(self.parameters(), lr=beta)
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
+
         self.to(self.device)
 
     def forward(self, state, action):
@@ -112,11 +113,9 @@ class ActorNetwork(nn.Module):
 
         mu = self.mu(prob4)
         sigma = self.sigma(prob4)
-        if torch.isnan(sigma).any():
-            print(state)
-            print(prob1)
 
         sigma = torch.clamp(sigma, min=self.reparam_noise, max=1)
+        #sigma = torch.sigmoid(sigma)
 
         return mu, sigma
 

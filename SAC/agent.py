@@ -9,7 +9,7 @@ from networks import ActorNetwork, CriticNetwork, ValueNetwork
 
 class Agent():
     def __init__(self, alpha=0.0003, beta=0.0003, input_dims=[8], env=None,
-                 gamma=0.99, n_actions=2, max_size=1000000, tau=0.005,
+                 gamma=0.99, n_actions=1, max_size=1000000, tau=0.005,
                  layer1_size=256, layer2_size=256, batch_size=256, reward_scale=2):
         self.gamma = gamma
         self.tau = tau
@@ -82,6 +82,7 @@ class Agent():
         state_ = T.tensor(new_state, dtype=T.float).to(self.actor.device)
         state = T.tensor(state, dtype=T.float).to(self.actor.device)
 
+
         action = T.tensor(action, dtype=T.float).to(self.actor.device)
 
         value = self.value(state).view(-1)
@@ -107,6 +108,7 @@ class Agent():
         q2_new_policy = self.critic_2.forward(state, actions)
         critic_value = T.min(q1_new_policy, q2_new_policy)
         critic_value = critic_value.view(-1)
+        print(critic_value)
 
         actor_loss = log_probs - critic_value
         actor_loss = T.mean(actor_loss)
