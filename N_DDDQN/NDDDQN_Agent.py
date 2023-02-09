@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from ExperienceReplay import ExperienceReplay
-
+import numpy as np
 
 class DuelingDeepQNetwork(nn.Module):
     def __init__(self, lr, n_actions, name, input_dims,chkpt_dir):
@@ -38,12 +38,12 @@ class DuelingDeepQNetwork(nn.Module):
         self.load_state_dict(T.load(self.checkpoint_file))
 
 class Agent():
-    def __init__(self, gamma, epsilon, lr, input_dims,batch_size,n_actions,
+    def __init__(self, discount, epsilon, lr, input_dims,batch_size,n_actions,
                  max_mem_size = 1000000, eps_end=0.01, eps_dec=5e-7, replace=100):
 
-        self.gamma = gamma
+        self.gamma = discount
         self.epsilon = epsilon
-        self.lr = 6.25e-5#lr
+        self.lr = lr
         self.n_actions = n_actions
         self.input_dims = input_dims
         self.batch_size = batch_size
@@ -68,7 +68,7 @@ class Agent():
 
     def choose_action(self, observation):
         if np.random.random() > self.epsilon:
-            state = T.tensor([observation],dtype=T.float).to(self.q_eval.device)
+            state = T.tensor(np.array([observation]),dtype=T.float).to(self.q_eval.device)
             _, advantage = self.q_eval.forward(state)
             action = T.argmax(advantage).item()
         else:

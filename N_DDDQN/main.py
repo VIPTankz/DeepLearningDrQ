@@ -7,10 +7,10 @@ if __name__ == '__main__':
 
     from NDDDQN_Agent import Agent
     for runs in range(15):
-        env = gym.make('LunarLander-v2')
+        env = gym.make('ALE/Breakout-v5', render_mode="rgb_array")
 
-        agent = Agent(gamma=0.99, epsilon=0.1, batch_size=32, n_actions=4,
-                      eps_end=0.1, input_dims=[8], lr=0.001,
+        agent = Agent(discount=0.99, epsilon=0.1, batch_size=32, n_actions=18,
+                      eps_end=0.1, input_dims=[84,84,4], lr=0.0001,
                       max_mem_size=1000000)
 
         scores = []
@@ -21,11 +21,12 @@ if __name__ == '__main__':
             score = 0
             episodes += 1
             done = False
-            observation = env.reset()
-            while not done:
+            trun = False
+            observation, info = env.reset()
+            while not done and not trun:
                 steps += 1
                 action = agent.choose_action(observation)
-                observation_, reward, done, info = env.step(action)
+                observation_, reward, done, trun, info = env.step(action)
                 env.render()
                 score += reward
                 agent.memory.store_transition(observation, action, reward,
