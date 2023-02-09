@@ -20,8 +20,8 @@ def plot_learning_curve(x, scores, figure_file):
 
 
 if __name__ == '__main__':
-    env = gym.make("InvertedPendulum-v4")
-    agent = Agent(input_dims=env.observation_space.shape, env=env, n_actions=env.action_space.shape[0])
+    env = gym.make("Pendulum-v1")
+    agent = Agent(input_dims=(3,), env=env, n_actions=env.action_space.shape[0])
     n_games = 1000
     filename = 'inverted_pendulum.png'
     figure_file = 'plots/' + filename
@@ -36,11 +36,13 @@ if __name__ == '__main__':
 
     for i in range(n_games):
         observation, _ = env.reset()
+        observation = (observation - env.observation_space.low)/(env.observation_space.high - env.observation_space.low)
         done = False
         score = 0
         while not done:
             action = agent.choose_action(observation)
             observation_, reward, done, _, info = env.step(action)
+            observation_ = (observation_ - env.observation_space.low)/(env.observation_space.high - env.observation_space.low)
             score += reward
             agent.remember(observation, action, reward, observation_, done)
             if not load_checkpoint:
