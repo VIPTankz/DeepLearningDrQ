@@ -1,4 +1,5 @@
 import gym
+import ale_py
 import numpy as np
 
 #Main.py && Main.py -double True && Main.py -per True && Main.py -double True -per True
@@ -11,7 +12,7 @@ if __name__ == '__main__':
 
         agent = Agent(discount=0.99, epsilon=0.1, batch_size=32, n_actions=18,
                       eps_end=0.1, input_dims=[84,84,4], lr=0.0001,
-                      max_mem_size=1000000)
+                      max_mem_size=1000)
 
         scores = []
         n_steps = 1000000
