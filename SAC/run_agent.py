@@ -20,9 +20,8 @@ def plot_learning_curve(x, scores, figure_file):
 
 
 if __name__ == '__main__':
-    env = gym.make("Pendulum-v1")
-    agent = Agent(input_dims=(3,), env=env, n_actions=env.action_space.shape[0])
-    n_games = 1000
+    env = gym.make('MountainCarContinuous-v0')
+    agent = Agent(input_dims=(2,), env=env, n_actions=env.action_space.shape[0])
     filename = 'inverted_pendulum.png'
     figure_file = 'plots/' + filename
 
@@ -33,7 +32,7 @@ if __name__ == '__main__':
     if load_checkpoint:
         agent.load_models()
         env.render(mode='human')
-
+    n_games=250
     for i in range(n_games):
         observation, _ = env.reset()
         observation = (observation - env.observation_space.low)/(env.observation_space.high - env.observation_space.low)
@@ -41,7 +40,8 @@ if __name__ == '__main__':
         score = 0
         while not done:
             action = agent.choose_action(observation)
-            observation_, reward, done, _, info = env.step(action)
+            observation_, reward, done, trun, info = env.step(action)
+            done = done or trun
             observation_ = (observation_ - env.observation_space.low)/(env.observation_space.high - env.observation_space.low)
             score += reward
             agent.remember(observation, action, reward, observation_, done)
@@ -55,7 +55,7 @@ if __name__ == '__main__':
             best_score = avg_score
             if not load_checkpoint:
                 agent.save_models()
-        print('episode ', i, 'score %.1f' % score, 'avg_score %1.f' % avg_score)
+        print('========================================================== episode ', i, 'score %.1f' % score, 'avg_score %1.f' % avg_score)
 
         if not load_checkpoint:
             x = [i+1 for i in range(n_games)]
