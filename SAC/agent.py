@@ -10,7 +10,7 @@ from networks import PolicyNetwork, QNetwork
 class SAC_Agent:
     def __init__(self, state_dim=3, action_dim=1, policy_lr=0.001, critic_lr=0.001, discount=0.98,
                  batch_size=200, replay_size=100000, soft_target_update=0.005, device='cuda', lr_alpha=0.005,
-                 chkpt_dir='training_logs/saved_models/sac'):
+                 chkpt_dir='training_logs/'):
         self.state_dim = state_dim  # [cos(theta), sin(theta), theta_dot]
         self.action_dim = action_dim  # [torque] in[-2,2]
         self.lr_pi = policy_lr
@@ -57,7 +57,7 @@ class SAC_Agent:
     def learn(self):
         o, a, r, o_, d = self.memory.sample(self.batch_size)
 
-        td_target = self.calc_target((o,a,r,o_,d))
+        td_target = self.calc_target((o, a, r, o_, d))
 
         #### Q1 train ####
         q1_loss = F.smooth_l1_loss(self.Q1(o, a), td_target)
@@ -104,17 +104,17 @@ class SAC_Agent:
         #### Q1, Q2 soft-update ####
 
     def save_models(self):
-        torch.save(self.PI.state_dict(), self.chkpt_dir + '/policy')
-        torch.save(self.Q1.state_dict(), self.chkpt_dir +'/Q1' )
-        torch.save(self.Q2.state_dict(), self.chkpt_dir + '/Q2')
-        torch.save(self.Q1_target.state_dict(), self.chkpt_dir + '/Q1_target')
-        torch.save(self.Q2.state_dict(), self.chkpt_dir + '/Q2_target')
-
-
+        torch.save(self.PI.state_dict(), self.chkpt_dir + 'saved_models/sac/policy')
+        torch.save(self.Q1.state_dict(), self.chkpt_dir + 'saved_models/sac/Q1')
+        torch.save(self.Q2.state_dict(), self.chkpt_dir + 'saved_models/sac/Q2')
+        torch.save(self.Q1_target.state_dict(), self.chkpt_dir + 'saved_models/sac/Q1_target')
+        torch.save(self.Q2.state_dict(), self.chkpt_dir + 'saved_models/sac/Q2_target')
+        self.memory.save(self.chkpt_dir + 'saved_replay_buffer/')
 
     def load_models(self):
-        self.PI.load_state_dict(torch.load(self.chkpt_dir + '/policy'))
-        self.Q1.load_state_dict(torch.load(self.chkpt_dir + '/Q1'))
-        self.Q2.load_state_dict(torch.load(self.chkpt_dir + '/Q2'))
-        self.Q1_target.load_state_dict(torch.load(self.chkpt_dir + '/Q1_target'))
-        self.Q2_target.load_state_dict(torch.load(self.chkpt_dir + '/Q2_target'))
+        self.PI.load_state_dict(torch.load(self.chkpt_dir + 'saved_models/sac/policy'))
+        self.Q1.load_state_dict(torch.load(self.chkpt_dir + 'saved_models/sac/Q1'))
+        self.Q2.load_state_dict(torch.load(self.chkpt_dir + 'saved_models/sac/Q2'))
+        self.Q1_target.load_state_dict(torch.load(self.chkpt_dir + 'saved_models/sac/Q1_target'))
+        self.Q2_target.load_state_dict(torch.load(self.chkpt_dir + 'saved_models/sac/Q2_target'))
+        self.memory.load(self.chkpt_dir + 'saved_replay_buffer/')

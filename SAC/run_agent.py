@@ -43,7 +43,7 @@ if __name__ == '__main__':
 
             steps_count += 1
 
-        print("EP:{}, Avg_Score:{:.1f}".format(EP, score))
+        print("Episode:{}, Avg_Score:{:.1f}".format(EP, score))
         score_list.append(score)
 
         if EP % 10 == 0:

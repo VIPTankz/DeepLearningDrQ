@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from collections import deque
 import random
-
+import pickle
 
 
 class ReplayBuffer():
@@ -31,9 +31,14 @@ class ReplayBuffer():
             s_next_batch[i] = torch.tensor(s_, dtype=torch.float)
             d_batch[i] = 0.0 if d else 1.0
 
-        return s_batch.to(self.dev), a_batch.to(self.dev), r_batch.to(self.dev), s_next_batch.to(self.dev), d_batch.to(self.dev)
+        return s_batch.to(self.dev), a_batch.to(self.dev), r_batch.to(self.dev), s_next_batch.to(self.dev), d_batch.to(
+            self.dev)
 
     def size(self):
         return len(self.buffer)
 
+    def save(self, path):
+        pickle.dump(self.buffer, open(path + '/replaybuffer.pkl', 'wb'))
 
+    def load(self, path):
+        self.buffer = pickle.load(open(path + 'replaybuffer.pkl', 'rb'))
