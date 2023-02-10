@@ -1,155 +1,120 @@
-import itertools
-import os
-import torch as T
+import numpy as np
 import torch
 import torch.nn.functional as F
-import numpy as np
+from torch import optim
+
 from buffer import ReplayBuffer
-from networks import ActorNetwork, CriticNetwork
+from networks import PolicyNetwork, QNetwork
 
 
-class Agent():
-    def __init__(self, alpha=0.01, beta=0.01, input_dims=[8], env=None,
-                 gamma=0.99, n_actions=1, max_size=1000000, tau=0.01,
-                 layer1_size=256, layer2_size=256, batch_size=256, reward_scale=1, entr_scal=0.2):
-        self.gamma = gamma
-        self.tau = tau
-        self.memory = ReplayBuffer(max_size, input_dims, n_actions)
+class SAC_Agent:
+    def __init__(self, state_dim=3, action_dim=1, policy_lr=0.001, critic_lr=0.001, discount=0.98,
+                 batch_size=200, replay_size=100000, soft_target_update=0.005, device='cuda', lr_alpha=0.005,
+                 chkpt_dir='training_logs/saved_models/sac'):
+        self.state_dim = state_dim  # [cos(theta), sin(theta), theta_dot]
+        self.action_dim = action_dim  # [torque] in[-2,2]
+        self.lr_pi = policy_lr
+        self.lr_q = critic_lr
+        self.gamma = discount
         self.batch_size = batch_size
-        self.n_actions = n_actions
-        self.zeta = entr_scal
+        self.buffer_limit = replay_size
+        self.tau = soft_target_update
+        self.init_alpha = 0.01
+        self.target_entropy = -self.action_dim  # == -1
+        self.lr_alpha = lr_alpha
+        self.DEVICE = device
+        self.memory = ReplayBuffer(self.buffer_limit, self.state_dim, self.action_dim, self.DEVICE)
+        self.chkpt_dir = chkpt_dir
 
-        self.actor = ActorNetwork(alpha, input_dims, n_actions=n_actions, name='actor',
-                                  max_action=env.action_space.high)
+        self.log_alpha = torch.tensor(np.log(self.init_alpha)).to(self.DEVICE)
+        self.log_alpha.requires_grad = True
+        self.log_alpha_optimizer = optim.Adam([self.log_alpha], lr=self.lr_alpha)
 
-        self.critic_1 = CriticNetwork(beta, input_dims, n_actions=n_actions, name='critic_1')
-        self.critic_2 = CriticNetwork(beta, input_dims, n_actions=n_actions, name='critic_2')
-        self.targ_critic_1 = CriticNetwork(beta, input_dims, n_actions=n_actions, name='targ_critic_1')
-        self.targ_critic_2 = CriticNetwork(beta, input_dims, n_actions=n_actions, name='targ_critic_2')
+        self.PI = PolicyNetwork(self.state_dim, self.action_dim, self.lr_pi).to(self.DEVICE)
+        self.Q1 = QNetwork(self.state_dim, self.action_dim, self.lr_q).to(self.DEVICE)
+        self.Q1_target = QNetwork(self.state_dim, self.action_dim, self.lr_q).to(self.DEVICE)
+        self.Q2 = QNetwork(self.state_dim, self.action_dim, self.lr_q).to(self.DEVICE)
+        self.Q2_target = QNetwork(self.state_dim, self.action_dim, self.lr_q).to(self.DEVICE)
 
-        for p in self.targ_critic_1.parameters():
-            p.requires_grad = False
+        self.Q1_target.load_state_dict(self.Q1.state_dict())
+        self.Q2_target.load_state_dict(self.Q2.state_dict())
 
-        for p in self.targ_critic_2.parameters():
-            p.requires_grad = False
-
-        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=alpha)
-        self.q_params = itertools.chain(self.critic_1.parameters(), self.critic_2.parameters())
-        self.q_optimizer = torch.optim.Adam(self.q_params, lr=beta)
-
-        self.scale = reward_scale
-        self.update_network_parameters(tau=1)
-
-    def choose_action(self, observation):
-        state = torch.Tensor([observation]).to(self.actor.device)
-
-        actions, _ = self.actor.sample_normal(state, reparameterize=False)
-        return actions.cpu().detach().numpy()[0]
-
-    def remember(self, state, action, reward, new_state, done):
-        self.memory.store_transition(state, action, reward, new_state, done)
-
-    def update_network_parameters(self, tau=None):
-        if tau is None:
-            tau = self.tau
-
-        q1_params = self.critic_1.named_parameters()
-        q2_params = self.critic_2.named_parameters()
-        q1_targ_params = self.targ_critic_1.named_parameters()
-        q2_targ_params = self.targ_critic_2.named_parameters()
-
-        q1_params_dict = dict(q1_params)
-        q2_params_dict = dict(q2_params)
-        q1_targ_params_dict = dict(q1_targ_params)
-        q2_targ_params_dict = dict(q2_targ_params)
-
-        for name in q1_params_dict:
-            q1_params_dict[name] = tau * q1_params_dict[name].clone() + \
-                                   (1 - tau) * q1_targ_params_dict[name].clone()
-        self.targ_critic_1.load_state_dict(q1_params_dict)
-
-        for name in q2_params_dict:
-            q2_params_dict[name] = tau * q2_params_dict[name].clone() + \
-                                   (1 - tau) * q2_targ_params_dict[name].clone()
-
-        self.targ_critic_2.load_state_dict(q1_params_dict)
-
-    def save_models(self):
-        print('.... saving models ....')
-        self.actor.save_checkpoint()
-        self.targ_critic_1.save_checkpoint()
-        self.targ_critic_2.save_checkpoint()
-        self.critic_1.save_checkpoint()
-        self.critic_2.save_checkpoint()
-
-    def load_models(self):
-        print('.... loading models ....')
-        self.actor.load_checkpoint()
-        self.targ_critic_1.load_checkpoint()
-        self.targ_critic_2.load_checkpoint()
-        self.critic_1.load_checkpoint()
-        self.critic_2.load_checkpoint()
-
-    def compute_critic_loss(self, state, action, reward, new_state, done):
-        r = T.tensor(reward, dtype=T.float).to(self.actor.device)
-        d = T.tensor(done, dtype=T.float).to(self.actor.device)
-        o2 = T.tensor(new_state, dtype=T.float).to(self.actor.device)
-        o = T.tensor(state, dtype=T.float).to(self.actor.device)
-        a = T.tensor(action, dtype=T.float).to(self.actor.device)
-
-        q1 = self.critic_1(o, a)
-        q2 = self.critic_2(o, a)
-
+    def choose_action(self, s):
         with torch.no_grad():
-            a2, logp_a2 = self.actor.sample_normal(o2)
+            action, log_prob = self.PI.sample(s.to(self.DEVICE))
+        return action, log_prob
 
-            q1_pi_targ = self.targ_critic_1(o2, a2)
-            q2_pi_targ = self.targ_critic_2(o2, a2)
-            q_pi_targ = torch.min(q1_pi_targ, q2_pi_targ)
-            backup = r + self.gamma * (1 - d) * (q_pi_targ - self.zeta * logp_a2)
-
-
-        loss_q1 = ((q1 - backup) ** 2).mean()
-        loss_q2 = ((q2 - backup) ** 2).mean()
-        loss_q = loss_q1 + loss_q2
-
-        return loss_q
-
-    def compute_policy_loss(self, state):
-        o = T.tensor(state, dtype=T.float).to(self.actor.device)
-
-        a, log_a = self.actor.sample_normal(o)
-        q1_pi = self.critic_1(o, a)
-        q2_pi = self.critic_2(o, a)
-        q_pi = torch.min(q1_pi, q2_pi)
-        loss_pi = (self.zeta * log_a - q_pi).mean()
-
-        return loss_pi
+    def calc_target(self, mini_batch):
+        s, a, r, s_prime, done = mini_batch
+        with torch.no_grad():
+            a_prime, log_prob_prime = self.PI.sample(s_prime)
+            entropy = - self.log_alpha.exp() * log_prob_prime
+            q1_target, q2_target = self.Q1_target(s_prime, a_prime), self.Q2_target(s_prime, a_prime)
+            q_target = torch.min(q1_target, q2_target)
+            target = r + self.gamma * done * (q_target + entropy)
+        return target
 
     def learn(self):
-        if self.memory.mem_cntr < self.batch_size:
-            return
+        o, a, r, o_, d = self.memory.sample(self.batch_size)
 
-        state, action, reward, new_state, done = \
-            self.memory.sample_buffer(self.batch_size)
+        td_target = self.calc_target((o,a,r,o_,d))
 
-        self.q_optimizer.zero_grad()
-        loss_q = self.compute_critic_loss(state, action, reward, new_state, done)
-        loss_q.backward()
-        self.q_optimizer.step()
+        #### Q1 train ####
+        q1_loss = F.smooth_l1_loss(self.Q1(o, a), td_target)
+        self.Q1.optimizer.zero_grad()
+        q1_loss.mean().backward()
+        # nn.utils.clip_grad_norm_(self.q1.parameters(), 1.0)
+        self.Q1.optimizer.step()
+        #### Q1 train ####
 
-        for p in self.q_params:
-            p.requires_grad = False
+        #### Q2 train ####
+        q2_loss = F.smooth_l1_loss(self.Q2(o, a), td_target)
+        self.Q2.optimizer.zero_grad()
+        q2_loss.mean().backward()
+        # nn.utils.clip_grad_norm_(self.q2.parameters(), 1.0)
+        self.Q2.optimizer.step()
+        #### Q2 train ####
 
-        self.actor_optimizer.zero_grad()
-        loss_pi = self.compute_policy_loss(state)
-        loss_pi.backward()
-        self.actor_optimizer.step()
+        #### pi train ####
+        actions, log_prob = self.PI.sample(o)
+        entropy = -self.log_alpha.exp() * log_prob
 
-        for p in self.q_params:
-            p.requires_grad = True
+        q1, q2 = self.Q1(o, actions), self.Q2(o, actions)
+        q = torch.min(q1, q2)
 
-        #print("critic loss: ", loss_q)
-        #print("actor loss: ", loss_pi)
+        pi_loss = -(q + entropy)  # for gradient ascent
+        self.PI.optimizer.zero_grad()
+        pi_loss.mean().backward()
+        # nn.utils.clip_grad_norm_(self.pi.parameters(), 2.0)
+        self.PI.optimizer.step()
+        #### pi train ####
 
-        self.update_network_parameters()
+        #### alpha train ####
+        self.log_alpha_optimizer.zero_grad()
+        alpha_loss = -(self.log_alpha.exp() * (log_prob + self.target_entropy).detach()).mean()
+        alpha_loss.backward()
+        self.log_alpha_optimizer.step()
+        #### alpha train ####
+
+        #### Q1, Q2 soft-update ####
+        for param_target, param in zip(self.Q1_target.parameters(), self.Q1.parameters()):
+            param_target.data.copy_(param_target.data * (1.0 - self.tau) + param.data * self.tau)
+        for param_target, param in zip(self.Q2_target.parameters(), self.Q2.parameters()):
+            param_target.data.copy_(param_target.data * (1.0 - self.tau) + param.data * self.tau)
+        #### Q1, Q2 soft-update ####
+
+    def save_models(self):
+        torch.save(self.PI.state_dict(), self.chkpt_dir + '/policy')
+        torch.save(self.Q1.state_dict(), self.chkpt_dir +'/Q1' )
+        torch.save(self.Q2.state_dict(), self.chkpt_dir + '/Q2')
+        torch.save(self.Q1_target.state_dict(), self.chkpt_dir + '/Q1_target')
+        torch.save(self.Q2.state_dict(), self.chkpt_dir + '/Q2_target')
+
+
+
+    def load_models(self):
+        self.PI.load_state_dict(torch.load(self.chkpt_dir + '/policy'))
+        self.Q1.load_state_dict(torch.load(self.chkpt_dir + '/Q1'))
+        self.Q2.load_state_dict(torch.load(self.chkpt_dir + '/Q2'))
+        self.Q1_target.load_state_dict(torch.load(self.chkpt_dir + '/Q1_target'))
+        self.Q2_target.load_state_dict(torch.load(self.chkpt_dir + '/Q2_target'))

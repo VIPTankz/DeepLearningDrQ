@@ -1,68 +1,52 @@
 from collections import UserDict
-
+import torch
+import os
 
 
 import gymnasium as gym
 
 import numpy as np
-from agent import Agent
+from agent import SAC_Agent
 import matplotlib.pyplot as plt
 
-def plot_learning_curve(x, scores, figure_file):
-    running_avg = np.zeros(len(scores))
-    for i in range(len(running_avg)):
-        running_avg[i] = np.mean(scores[max(0, i-100):(i+1)])
-    plt.plot(x, running_avg)
-    plt.title('Running average of previous 100 scores')
-    plt.savefig(figure_file)
-
-
-
-
 if __name__ == '__main__':
-    env = gym.make('MountainCarContinuous-v0')
-    agent = Agent(input_dims=(2,), env=env, n_actions=env.action_space.shape[0])
-    filename = 'inverted_pendulum.png'
-    figure_file = 'plots/' + filename
 
-    best_score = env.reward_range[0]
-    score_history = []
-    load_checkpoint = False
 
-    if load_checkpoint:
-        agent.load_models()
-        env.render(mode='human')
-    n_games=250
-    for i in range(n_games):
-        observation, _ = env.reset()
-        observation = (observation - env.observation_space.low)/(env.observation_space.high - env.observation_space.low)
-        done = False
-        score = 0
+
+    env = gym.make('Pendulum-v1')
+    agent = SAC_Agent()
+
+    EPISODE = 500
+    steps_count = 0
+    print_once = True
+    score_list = []
+
+    for EP in range(EPISODE):
+        state, _ = env.reset()
+        score, done = 0.0, False
+
         while not done:
-            action = agent.choose_action(observation)
-            observation_, reward, done, trun, info = env.step(action)
+            action, log_prob = agent.choose_action(torch.FloatTensor(state))
+            action = action.detach().cpu().numpy()
+
+            state_prime, reward, done, trun, _ = env.step(action)
             done = done or trun
-            observation_ = (observation_ - env.observation_space.low)/(env.observation_space.high - env.observation_space.low)
+
+            agent.memory.put((state, action, reward, state_prime, done))
+
             score += reward
-            agent.remember(observation, action, reward, observation_, done)
-            if not load_checkpoint:
+
+            state = state_prime
+
+            if agent.memory.size() > agent.batch_size:
                 agent.learn()
-            observation = observation_
-        score_history.append(score)
-        avg_score = np.mean(score_history[-100:])
 
-        if avg_score > best_score:
-            best_score = avg_score
-            if not load_checkpoint:
-                agent.save_models()
-        print('========================================================== episode ', i, 'score %.1f' % score, 'avg_score %1.f' % avg_score)
+            steps_count += 1
 
-        if not load_checkpoint:
-            x = [i+1 for i in range(n_games)]
-            #plot_learning_curve(x, score_history, figure_file)
+        print("EP:{}, Avg_Score:{:.1f}".format(EP, score))
+        score_list.append(score)
 
+        if EP % 10 == 0:
+            agent.save_models()
 
-
-
-
-
+    np.savetxt(log_save_dir + '/pendulum_score.txt', score_list)

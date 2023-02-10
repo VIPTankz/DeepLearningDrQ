@@ -1,40 +1,39 @@
 import numpy as np
+import torch
+from collections import deque
+import random
+
 
 
 class ReplayBuffer():
-    def __init__(self, max_size, input_shape, n_actions):
-        self.mem_size = max_size
-        self.mem_cntr = 0
-        self.state_memory = np.zeros((self.mem_size, *input_shape))
-        self.new_state_memory = np.zeros((self.mem_size, *input_shape))
-        self.action_memory = np.zeros((self.mem_size, n_actions))
-        self.reward_memory = np.zeros(self.mem_size)
-        self.terminal_memory = np.zeros(self.mem_size, dtype=bool)
+    def __init__(self, buffer_limit, state_dim, action_dim, DEVICE):
+        self.buffer = deque(maxlen=buffer_limit)
+        self.dev = DEVICE
+        self.state_dim = state_dim
+        self.action_dim = action_dim
 
-    def store_transition(self, state, action, reward, state_, done):
-        index = self.mem_cntr % self.mem_size
+    def put(self, transition):
+        self.buffer.append(transition)
 
-        self.state_memory[index] = state
-        self.new_state_memory[index] = state_
-        self.action_memory[index] = action
-        self.reward_memory[index] = reward
-        self.terminal_memory[index] = done
+    def sample(self, n):
+        mini_batch = random.sample(self.buffer, n)
+        s_batch = torch.empty((n, self.state_dim), dtype=torch.float)
+        a_batch = torch.empty((n, self.action_dim), dtype=torch.float)
+        r_batch = torch.empty((n, 1), dtype=torch.float)
+        s_next_batch = torch.empty((n, self.state_dim), dtype=torch.float)
+        d_batch = torch.empty((n, 1), dtype=torch.float)
 
-        self.mem_cntr += 1
+        for i, transition in enumerate(mini_batch):
+            s, a, r, s_, d = transition
+            s_batch[i] = torch.tensor(s, dtype=torch.float)
+            a_batch[i] = torch.tensor(a, dtype=torch.float)
+            r_batch[i] = torch.tensor(r, dtype=torch.float)
+            s_next_batch[i] = torch.tensor(s_, dtype=torch.float)
+            d_batch[i] = 0.0 if d else 1.0
 
-    def sample_buffer(self, batch_size):
-        max_mem = min(self.mem_cntr, self.mem_size)
+        return s_batch.to(self.dev), a_batch.to(self.dev), r_batch.to(self.dev), s_next_batch.to(self.dev), d_batch.to(self.dev)
 
-        batch = np.random.choice(max_mem, batch_size)
-
-        states = self.state_memory[batch]
-        states_ = self.new_state_memory[batch]
-        actions = self.action_memory[batch]
-        rewards = self.reward_memory[batch]
-        dones = self.terminal_memory[batch]
-
-        return states, actions, rewards, states_, dones
-
-
+    def size(self):
+        return len(self.buffer)
 
 

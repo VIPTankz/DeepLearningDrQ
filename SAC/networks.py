@@ -7,115 +7,66 @@ from torch.distributions.normal import Normal
 import numpy as np
 
 
-class CriticNetwork(nn.Module):
-    def __init__(self, beta, input_dims, n_actions, fc1_dims=256, fc2_dims=256,
-                 name='critic', chkpt_dir='tmp/sac'):
-        super(CriticNetwork, self).__init__()
-        self.input_dims = input_dims
-        self.fc1_dims = fc1_dims
-        self.fc2_dims = fc2_dims
-        self.n_actions = n_actions
-        self.name = name
-        self.checkpoint_dir = chkpt_dir
-        self.checkpoint_file = os.path.join(self.checkpoint_dir, name+'_sac')
+class PolicyNetwork(nn.Module):
+    def __init__(self, state_dim, action_dim, actor_lr):
+        super(PolicyNetwork, self).__init__()
 
-        self.fc1 = nn.Linear(self.input_dims[0]+n_actions, self.fc1_dims)
-        self.fc2 = nn.Linear(self.fc1_dims, self.fc2_dims)
-        self.q = nn.Linear(self.fc2_dims, 1)
+        self.fc_1 = nn.Linear(state_dim, 64)
+        self.fc_2 = nn.Linear(64, 64)
+        self.fc_mu = nn.Linear(64, action_dim)
+        self.fc_std = nn.Linear(64, action_dim)
 
-        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        self.lr = actor_lr
 
-        self.to(self.device)
+        self.LOG_STD_MIN = -20
+        self.LOG_STD_MAX = 2
+        self.max_action = 2
+        self.min_action = -2
+        self.action_scale = (self.max_action - self.min_action) / 2.0
+        self.action_bias = (self.max_action + self.min_action) / 2.0
 
-    def forward(self, state, action):
-        action_value = self.fc1(torch.cat([state, action], dim=1))
-        action_value = F.relu(action_value)
-        action_value = self.fc2(action_value)
-        action_values = F.relu(action_value)
+        self.optimizer = optim.Adam(self.parameters(), lr=self.lr)
 
-        q = self.q(action_values)
+    def forward(self, x):
+        x = F.leaky_relu(self.fc_1(x))
+        x = F.leaky_relu(self.fc_2(x))
+        mu = self.fc_mu(x)
+        log_std = self.fc_std(x)
+        log_std = torch.clamp(log_std, self.LOG_STD_MIN, self.LOG_STD_MAX)
+        return mu, log_std
+
+    def sample(self, state):
+        mean, log_std = self.forward(state)
+        std = torch.exp(log_std)
+        reparameter = Normal(mean, std)
+        x_t = reparameter.rsample()
+        y_t = torch.tanh(x_t)
+        action = self.action_scale * y_t + self.action_bias
+
+        # # Enforcing Action Bound
+        log_prob = reparameter.log_prob(x_t)
+        log_prob = log_prob - torch.sum(torch.log(self.action_scale * (1 - y_t.pow(2)) + 1e-6), dim=-1, keepdim=True)
+
+        return action, log_prob
+
+
+class QNetwork(nn.Module):
+    def __init__(self, state_dim, action_dim, critic_lr):
+        super(QNetwork, self).__init__()
+
+        self.fc_s = nn.Linear(state_dim, 32)
+        self.fc_a = nn.Linear(action_dim, 32)
+        self.fc_1 = nn.Linear(64, 64)
+        self.fc_out = nn.Linear(64, action_dim)
+
+        self.lr = critic_lr
+
+        self.optimizer = optim.Adam(self.parameters(), lr=self.lr)
+
+    def forward(self, x, a):
+        h1 = F.leaky_relu(self.fc_s(x))
+        h2 = F.leaky_relu(self.fc_a(a))
+        cat = torch.cat([h1, h2], dim=-1)
+        q = F.leaky_relu(self.fc_1(cat))
+        q = self.fc_out(q)
         return q
-
-    def save_checkpoint(self):
-        torch.save(self.state_dict(), self.checkpoint_file)
-
-    def load_checkpoint(self):
-        self.load_state_dict(torch.load(self.checkpoint_file))
-
-
-
-
-
-
-class ActorNetwork(nn.Module):
-    def __init__(self, alpha, input_dims, max_action, fc1_dims=256,
-                 fc2_dims=256, n_actions=2, name='actor', chkpt_dir='tmp/sac'):
-        super(ActorNetwork, self).__init__()
-        self.input_dims = input_dims
-        self.fc1_dims = fc1_dims
-        self.fc2_dims = fc2_dims
-        self.n_actions = n_actions
-        self.name = name
-        self.checkpoint_dir = chkpt_dir
-        self.checkpoint_file = os.path.join(self.checkpoint_dir, name+'_sac')
-        self.reparam_noise = 1e-6
-        self.fc1 = nn.Linear(self.input_dims[0], self.fc1_dims)
-        self.fc2 = nn.Linear(self.fc1_dims, self.fc2_dims)
-        self.mu = nn.Linear(self.fc2_dims, self.n_actions)
-        self.sigma = nn.Linear(self.fc2_dims, self.n_actions)
-
-        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-        self.max_action = torch.tensor(max_action).to(self.device)
-
-        self.to(self.device)
-
-    def forward(self, state):
-        prob1 = self.fc1(state)
-        prob2 = F.relu(prob1)
-        prob3 = self.fc2(prob2)
-        prob4 = F.relu(prob3)
-
-        mu = self.mu(prob4)
-        sigma = self.sigma(prob4)
-
-        #sigma = torch.clamp(sigma, min=self.reparam_noise, max=1)
-        log_prob = torch.clamp(sigma, min=-20, max=2)
-        std = torch.exp(log_prob)
-        return mu, std
-
-    def sample_normal(self, state, reparameterize=True):
-        mu, sigma = self.forward(state)
-        probabilities = Normal(mu, sigma)
-
-        if reparameterize:
-            actions = probabilities.rsample()
-        else:
-            actions = probabilities.sample()
-
-        log_probs = probabilities.log_prob(actions).sum(axis=-1)
-        log_probs -= (2*(np.log(2) - actions - F.softplus(-2*actions))).sum(axis=1)
-        actions = torch.tanh(mu)
-        actions = self.max_action * actions
-        return actions, log_probs
-
-    def save_checkpoint(self):
-        torch.save(self.state_dict(), self.checkpoint_file)
-
-    def load_checkpoint(self):
-        self.load_state_dict(torch.load(self.checkpoint_file))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
