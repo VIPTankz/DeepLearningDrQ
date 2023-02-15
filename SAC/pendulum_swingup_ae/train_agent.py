@@ -8,20 +8,21 @@ from dm_control.suite.wrappers import pixels
 import pickle
 import numpy as np
 from agent import SAC_Agent
+from environment import Environment
 
 
 
 STEPS_LIMIT = 1000000
 LOGGING_DIR = 'training_logs/'
-RETRAIN = False
+RETRAIN = True
 ENV_NAME = "cartpole"
 TASK_NAME = "swingup"
 
 
 if __name__ == '__main__':
     pickle.dump(ENV_NAME, open(LOGGING_DIR + 'train_data/env_name.txt', 'wb'))
-    env = suite.load(domain_name=ENV_NAME, task_name=TASK_NAME)
-    env = pixels(env)
+    env = Environment()
+    timestep = env.reset()
     agent = SAC_Agent(chkpt_dir=LOGGING_DIR)
     step_count = 0
     episode_count = 0
@@ -38,22 +39,22 @@ if __name__ == '__main__':
 
 while step_count < STEPS_LIMIT:
     timestep = env.reset()
-
     score, done = 0.0, False
     episode_count += 1
     while not timestep.last():
-        action, log_prob = agent.choose_action(torch.FloatTensor(timestep.observation['pixels']))
+        action, log_prob = agent.choose_action(timestep.observation['pixels'].to(agent.DEVICE))
+        print(timestep.observation['pixels'].shape)
+        print(action)
         action = action.detach().cpu().numpy()
 
         next_timestep = env.step(action)
-
-        agent.memory.put((timestep.observation['pixels'].flatten(),
+        agent.memory.put((timestep.observation['pixels'],
                           action,
-                          timestep.reward,
-                          next_timestep.observation['pixels'].flaten(),
+                          next_timestep.reward,
+                          next_timestep.observation['pixels'],
                           timestep.last()))
 
-        score += timestep.reward
+        score += next_timestep.reward
 
         timestep = next_timestep
 

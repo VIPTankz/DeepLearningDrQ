@@ -2,15 +2,15 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import optim
-
+from torchvision import transforms
 from buffer import ReplayBuffer
 from networks import PolicyNetwork, QNetwork
 
 
 class SAC_Agent:
-    def __init__(self, state_dim=(240, 320, 9), feature_dim=50, action_dim=1, policy_lr=0.001, critic_lr=0.001, discount=0.98,
+    def __init__(self, state_dim=(9, 84, 84), feature_dim=50, action_dim=1, policy_lr=0.001, critic_lr=0.001, discount=0.98,
                  batch_size=200, replay_size=100000, soft_target_update=0.005, device='cuda', lr_alpha=0.005,
-                 chkpt_dir='training_logs/'):
+                 chkpt_dir='training_logs/', img_size=(84,84)):
         self.state_dim = state_dim  # [cos(theta), sin(theta), theta_dot]
         self.action_dim = action_dim  # [torque] in[-2,2]
         self.feature_dim = feature_dim
@@ -26,6 +26,7 @@ class SAC_Agent:
         self.DEVICE = device
         self.memory = ReplayBuffer(self.buffer_limit, self.state_dim, self.action_dim, self.DEVICE)
         self.chkpt_dir = chkpt_dir
+        self.img_size = img_size
 
         self.log_alpha = torch.tensor(np.log(self.init_alpha)).to(self.DEVICE)
         self.log_alpha.requires_grad = True
@@ -37,13 +38,14 @@ class SAC_Agent:
         self.Q2 = QNetwork(self.state_dim, self.feature_dim, self.action_dim, self.lr_q).to(self.DEVICE)
         self.Q2_target = QNetwork(self.state_dim, self.feature_dim, self.action_dim, self.lr_q).to(self.DEVICE)
 
-        self.PI.encoder.copy_conv_weights_from(self.Q1.critic.encoder)
+        self.PI.encoder.copy_conv_weights_from(self.Q1.encoder)
         self.Q2.encoder.copy_conv_weights_from(self.Q1.encoder)
         self.Q1_target.encoder.copy_conv_weights_from(self.Q1.encoder)
         self.Q2_target.encoder.copy_conv_weights_from(self.Q1.encoder)
 
         self.Q1_target.load_state_dict(self.Q1.state_dict())
         self.Q2_target.load_state_dict(self.Q2.state_dict())
+
 
     def choose_action(self, s):
         with torch.no_grad():
@@ -62,8 +64,6 @@ class SAC_Agent:
 
     def learn(self):
         o, a, r, o_, d = self.memory.sample(self.batch_size)
-        o = torch.reshape(o, (self.batch_size,) + self.state_dim).permute(0, 3, 1, 2)
-        o_ = torch.reshape(o, (self.batch_size,) + self.state_dim).permute(0, 3, 1, 2)
 
         td_target = self.calc_target((o, a, r, o_, d))
 

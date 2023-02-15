@@ -19,7 +19,6 @@ class Encoder(nn.Module):
         self.output_dim = 35
         self.output_logits = False
         self.feature_dim = feature_dim
-
         self.convs = nn.ModuleList([
             nn.Conv2d(obs_shape[0], self.num_filters, 3, stride=2),
             nn.Conv2d(self.num_filters, self.num_filters, 3, stride=1),
@@ -27,24 +26,22 @@ class Encoder(nn.Module):
             nn.Conv2d(self.num_filters, self.num_filters, 3, stride=1)
         ])
 
-        self.head = nn.Linear(self.num_filters * 35 * 35, self.feature_dim)
+        self.head = nn.Linear(39200, self.feature_dim)
         self.head2 = nn.LayerNorm(self.feature_dim)
 
     def forward_convs(self, obs):
-        obs = obs / 255.
         obs = torch.relu(self.convs[0](obs))
-
         for i in range(1, self.num_layers):
-            conv = torch.relu(self.convs[i](conv))
+            obs = torch.relu(self.convs[i](obs))
 
-        h = conv.view(conv.size(0), -1)
+        h = obs.flatten()
+
         return h
 
     def forward(self, obs, detach=False):
         h = self.forward_convs(obs)
         if detach:
             h.detach()
-
         out = self.head(h)
         out = self.head2(out)
 
@@ -54,7 +51,7 @@ class Encoder(nn.Module):
 
     def copy_conv_weights_from(self, source):
         for i in range(self.num_layers):
-            source.convs[i].weight = self.convs[i].weights
+            source.convs[i].weight = self.convs[i].weight
             source.convs[i].bias = self.convs[i].bias
 
 
@@ -66,8 +63,8 @@ class PolicyNetwork(nn.Module):
 
         self.fc_1 = nn.Linear(feature_dim, 1024)
         self.fc_2 = nn.Linear(1024, 1024)
-        self.fc_mu = nn.Linear(64, action_dim)
-        self.fc_std = nn.Linear(64, action_dim)
+        self.fc_mu = nn.Linear(1024, action_dim)
+        self.fc_std = nn.Linear(1024, action_dim)
 
         self.lr = actor_lr
 
@@ -101,7 +98,6 @@ class PolicyNetwork(nn.Module):
         # # Enforcing Action Bound
         log_prob = reparameter.log_prob(x_t)
         log_prob = log_prob - torch.sum(torch.log(self.action_scale * (1 - y_t.pow(2)) + 1e-6), dim=-1, keepdim=True)
-
         return action, log_prob
 
 
