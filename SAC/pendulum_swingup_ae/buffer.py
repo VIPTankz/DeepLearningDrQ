@@ -26,10 +26,10 @@ class ReplayBuffer():
 
         for i, transition in enumerate(mini_batch):
             s, a, r, s_, d = transition
-            s_batch[i] = torch.tensor(s, dtype=torch.float)
+            s_batch[i] = s.clone().detach()
             a_batch[i] = torch.tensor(a, dtype=torch.float)
             r_batch[i] = torch.tensor(r, dtype=torch.float)
-            s_next_batch[i] = torch.tensor(s_, dtype=torch.float)
+            s_next_batch[i] = s_.clone().detach()
             d_batch[i] = 0.0 if d else 1.0
 
         return s_batch.to(self.dev), a_batch.to(self.dev), r_batch.to(self.dev), s_next_batch.to(self.dev), d_batch.to(

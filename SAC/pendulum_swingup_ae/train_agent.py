@@ -43,8 +43,6 @@ while step_count < STEPS_LIMIT:
     episode_count += 1
     while not timestep.last():
         action, log_prob = agent.choose_action(timestep.observation['pixels'].to(agent.DEVICE))
-        print(timestep.observation['pixels'].shape)
-        print(action)
         action = action.detach().cpu().numpy()
 
         next_timestep = env.step(action)

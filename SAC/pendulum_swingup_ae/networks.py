@@ -34,8 +34,7 @@ class Encoder(nn.Module):
         for i in range(1, self.num_layers):
             obs = torch.relu(self.convs[i](obs))
 
-        h = obs.flatten()
-
+        h = obs.view(obs.shape[0], -1)
         return h
 
     def forward(self, obs, detach=False):
@@ -80,6 +79,7 @@ class PolicyNetwork(nn.Module):
     def forward(self, x, detach_encoder=False):
         x = self.encoder(x, detach=detach_encoder)
 
+
         x = F.relu(self.fc_1(x))
         x = F.relu(self.fc_2(x))
         mu = self.fc_mu(x)
@@ -107,7 +107,7 @@ class QNetwork(nn.Module):
 
         self.encoder = Encoder(state_dim, feature_dim)
 
-        self.fc_1 = nn.Linear(feature_dim, 1024)
+        self.fc_1 = nn.Linear(feature_dim + action_dim, 1024)
         self.fc_2 = nn.Linear(1024, 1024)
         self.fc_3 = nn.Linear(1024, action_dim)
 

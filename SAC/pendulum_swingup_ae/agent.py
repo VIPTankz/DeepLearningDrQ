@@ -48,6 +48,8 @@ class SAC_Agent:
 
 
     def choose_action(self, s):
+        if len(s.size()) < 4:
+            s = s[None, :]
         with torch.no_grad():
             action, log_prob = self.PI.sample(s.to(self.DEVICE))
         return action, log_prob
