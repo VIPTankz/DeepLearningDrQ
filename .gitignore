@@ -1,1 +1,4 @@
 # Nothing ignore oo
+training_logs*
+SAC/pendulum_swingup_ae/training_logs
+SAC/pendulum_swingup_state/training_logs
