@@ -1,24 +1,23 @@
-import os
+from torch import nn
 import torch
 import torch.nn.functional as F
-import torch.nn as nn
 import torch.optim as optim
 from torch.distributions.normal import Normal
-import numpy as np
+
+
+def tie_weights(src, trg):
+    assert type(src) == type(trg)
+    trg.weight = src.weight
+    trg.bias = src.bias
 
 
 class Encoder(nn.Module):
-    """ Convolutional encoder for image-based observations"""
-
-    def __init__(self, obs_shape, feature_dim):
+    def __init__(self, obs_shape, feature_dim, num_filters=32):
         super().__init__()
-
-        assert len(obs_shape) == 3
-        self.num_layers = 4
-        self.num_filters = 32
-        self.output_dim = 35
-        self.output_logits = False
+        self.obs_shape = obs_shape
         self.feature_dim = feature_dim
+        self.num_filters = num_filters
+
         self.convs = nn.ModuleList([
             nn.Conv2d(obs_shape[0], self.num_filters, 3, stride=2),
             nn.Conv2d(self.num_filters, self.num_filters, 3, stride=1),
@@ -26,99 +25,84 @@ class Encoder(nn.Module):
             nn.Conv2d(self.num_filters, self.num_filters, 3, stride=1)
         ])
 
-        self.head = nn.Linear(39200, self.feature_dim)
-        self.head2 = nn.LayerNorm(self.feature_dim)
-
-    def forward_convs(self, obs):
-        obs = torch.relu(self.convs[0](obs))
-        for i in range(1, self.num_layers):
-            obs = torch.relu(self.convs[i](obs))
-
-        h = obs.view(obs.shape[0], -1)
-        return h
+        self.fc = nn.Linear(num_filters * 35 * 35, feature_dim[0])
+        self.ln = nn.LayerNorm(feature_dim[0])
 
     def forward(self, obs, detach=False):
-        h = self.forward_convs(obs)
+        for conv_layer in self.convs:
+            obs = F.leaky_relu(conv_layer(obs))
+        obs = obs.view(obs.size(0), -1)
+
         if detach:
-            h.detach()
-        out = self.head(h)
-        out = self.head2(out)
+            obs = obs.detach()
 
-        if not self.output_logits:
-            out = torch.tanh(out)
-        return out
+        obs = self.fc(obs)
+        obs = self.ln(obs)
+        obs = torch.tanh(obs)
+        return obs
 
-    def copy_conv_weights_from(self, source):
-        for i in range(self.num_layers):
-            source.convs[i].weight = self.convs[i].weight
-            source.convs[i].bias = self.convs[i].bias
+    def copy_weights_from(self, source):
+        for i in range(4):
+            tie_weights(src=source.convs[i], trg=self.convs[i])
 
 
 class PolicyNetwork(nn.Module):
-    def __init__(self, state_dim, feature_dim, action_dim, actor_lr):
-        super(PolicyNetwork, self).__init__()
+    def __init__(self, obs_shape, feature_dim, action_shape, actor_lr,
+                 log_std_min, log_std_max, max_action, min_action):
+        super().__init__()
 
-        self.encoder = Encoder(state_dim, feature_dim)
+        self.encoder = Encoder(obs_shape, feature_dim)
 
-        self.fc_1 = nn.Linear(feature_dim, 1024)
+        self.fc_1 = nn.Linear(feature_dim[0], 1024)
         self.fc_2 = nn.Linear(1024, 1024)
-        self.fc_mu = nn.Linear(1024, action_dim)
-        self.fc_std = nn.Linear(1024, action_dim)
+        self.fc_mu = nn.Linear(1024, action_shape[0])
+        self.fc_std = nn.Linear(1024, action_shape[0])
 
-        self.lr = actor_lr
-
-        self.LOG_STD_MIN = -20
-        self.LOG_STD_MAX = 2
-        self.max_action = 2
-        self.min_action = -2
+        self.log_std_min = log_std_min
+        self.log_std_max = log_std_max
+        self.max_action = max_action
+        self.min_action = min_action
         self.action_scale = (self.max_action - self.min_action) / 2.0
         self.action_bias = (self.max_action + self.min_action) / 2.0
 
-        self.optimizer = optim.Adam(self.parameters(), lr=self.lr)
 
-    def forward(self, x, detach_encoder=False):
-        x = self.encoder(x, detach=detach_encoder)
-
-
-        x = F.relu(self.fc_1(x))
-        x = F.relu(self.fc_2(x))
-        mu = self.fc_mu(x)
-        log_std = self.fc_std(x)
-        log_std = torch.clamp(log_std, self.LOG_STD_MIN, self.LOG_STD_MAX)
+    def forward(self, obs, detach_encoder=False):
+        assert len(obs.shape) == 4, 'Requires (Batch, Channel, Height, Width)'
+        obs = self.encoder(obs, detach=detach_encoder)
+        obs = F.leaky_relu(self.fc_1(obs))
+        obs = F.leaky_relu(self.fc_2(obs))
+        mu = self.fc_mu(obs)
+        log_std = self.fc_std(obs)
+        log_std = torch.clamp(log_std, self.log_std_min, self.log_std_max)
         return mu, log_std
 
     def sample(self, state):
         mean, log_std = self.forward(state)
         std = torch.exp(log_std)
-        reparameter = Normal(mean, std)
-        x_t = reparameter.rsample()
-        y_t = torch.tanh(x_t)
-        action = self.action_scale * y_t + self.action_bias
+        dist = Normal(mean, std)
+        x = dist.rsample()
+        y = torch.tanh(x)
+        action = self.action_scale * y + self.action_bias
 
-        # # Enforcing Action Bound
-        log_prob = reparameter.log_prob(x_t)
-        log_prob = log_prob - torch.sum(torch.log(self.action_scale * (1 - y_t.pow(2)) + 1e-6), dim=-1, keepdim=True)
+        log_prob = dist.log_prob(x)
+        log_prob = log_prob - torch.sum(torch.log(self.action_scale * (1 - y.pow(2)) + 1e-6), dim=-1, keepdim=True)
         return action, log_prob
 
 
 class QNetwork(nn.Module):
-    def __init__(self, state_dim, feature_dim, action_dim, critic_lr):
-        super(QNetwork, self).__init__()
-
-        self.encoder = Encoder(state_dim, feature_dim)
-
-        self.fc_1 = nn.Linear(feature_dim + action_dim, 1024)
+    def __init__(self, obs_shape, feature_dim, action_shape, critic_lr):
+        super().__init__()
+        self.encoder = Encoder(obs_shape, feature_dim)
+        self.fc_1 = nn.Linear(feature_dim[0] + action_shape[0], 1024)
         self.fc_2 = nn.Linear(1024, 1024)
-        self.fc_3 = nn.Linear(1024, action_dim)
+        self.fc_3 = nn.Linear(1024, action_shape[0])
 
-        self.lr = critic_lr
 
-        self.optimizer = optim.Adam(self.parameters(), lr=self.lr)
-
-    def forward(self, x, a):
-        x = self.encoder(x)
-        cat = torch.cat([x, a], dim=-1)
-        q = F.relu(self.fc_1(cat))
-        q = F.relu(self.fc_2(q))
+    def forward(self, obs, action):
+        obs = self.encoder(obs)
+        cat = torch.cat([obs, action], dim=-1)
+        q = F.leaky_relu(self.fc_1(cat))
+        q = F.leaky_relu(self.fc_2(q))
         q = self.fc_3(q)
         return q
+
