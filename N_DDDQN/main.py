@@ -10,9 +10,9 @@ from copy import deepcopy
 if __name__ == '__main__':
 
     #from NDDDQN_Agent import Agent
-    from NDDDQN_Agent import Agent
+    from DrQ_NDDDQN_Agent import Agent
     for runs in range(5):
-        env = gym.make('ALE/Breakout-v5')#, render_mode="human"
+        env = gym.make('ALE/Breakout-v5')
         env = AtariPreprocessing(env, frame_skip=1)
         env = gym.wrappers.FrameStack(env, 4)
         env.seed(runs)
@@ -22,7 +22,6 @@ if __name__ == '__main__':
         agent = Agent(discount=0.99, batch_size=32, n_actions=env.action_space.n,
                        input_dims=[4,84,84], lr=0.0001,
                       max_mem_size=100000)
-
 
         scores = []
         scores_temp = []
@@ -42,10 +41,6 @@ if __name__ == '__main__':
                 action = agent.choose_action(observation)
                 observation_, reward, done, trun, info = env.step(action)
                 reward = np.clip(reward, -1., 1.)
-
-                #######REMOVE THIS FOR COURSEWORK EXPERIMENTS
-
-                ########
 
                 score += reward
                 agent.memory.store_transition(observation, action, reward,

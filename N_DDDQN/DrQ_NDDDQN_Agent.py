@@ -181,22 +181,30 @@ class Agent():
 
         self.replace_target_network()
 
-        states,actions,rewards,new_states,dones = self.memory.sample_memory()
+        states,actions,rewards,states_,dones = self.memory.sample_memory()
+
+        states_aug = self.random_shift(T.tensor(states).float()).to(self.q_eval.device)
+        states_aug_ = self.random_shift(T.tensor(states_).float()).to(self.q_eval.device)
 
         states = T.tensor(states).to(self.q_eval.device)
         rewards = T.tensor(rewards).to(self.q_eval.device)
         dones = T.tensor(dones).to(self.q_eval.device)
         actions = T.tensor(actions).to(self.q_eval.device)
-        states_ = T.tensor(new_states).to(self.q_eval.device)
+        states_ = T.tensor(states_).to(self.q_eval.device)
 
         indices = np.arange(self.batch_size)
 
-        states_aug = self.random_shift(states)
-        states_aug_ = self.random_shift(states_)
+        V_s, A_s = self.q_eval.forward(states)
+        V_s_aug, A_s_aug = self.q_eval.forward(states_aug)
 
-        # K = 2
-        V_s, A_s = (self.q_eval.forward(states) + self.q_eval.forward(states_aug)) / 2
-        V_s_, A_s_ = (self.q_eval.forward(states_) + self.q_eval.forward(states_aug_)) / 2
+        V_s_, A_s_ = self.q_eval.forward(states_)
+        V_s_aug_, A_s_aug_ = self.q_eval.forward(states_)
+
+        V_s = (V_s + V_s_aug) / 2
+        V_s_ = (V_s_ + V_s_aug_) / 2
+
+        A_s = (A_s + A_s_aug) / 2
+        A_s_ = (A_s_ + A_s_aug_) / 2
 
         """
         statesM = states.unsqueeze(1).repeat(1, self.M, 1, 1, 1)
