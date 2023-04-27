@@ -1,12 +1,16 @@
 import os
 import numpy as np
+import torch
 import torch as T
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import torchvision
 from ExperienceReplay import ExperienceReplay
 import numpy as np
 from collections import deque
+import kornia.augmentation as aug
+from torchvision.utils import save_image
 
 class DuelingDeepQNetwork(nn.Module):
     def __init__(self, lr, n_actions, name, input_dims,chkpt_dir):
@@ -63,11 +67,11 @@ class Agent():
 
         self.epsilon = EpsilonGreedy()
         self.lr = lr
-        self.n_actions = n_actions
+        self.num_actions = n_actions
         self.input_dims = input_dims
         self.batch_size = batch_size
         self.replace_target_cnt = replace
-        self.action_space = [i for i in range(self.n_actions)]
+        self.action_space = [i for i in range(self.num_actions)]
         self.learn_step_counter = 0
         self.chkpt_dir = 'tmp/dueling_ddqn'
         self.min_sampling_size = 1600
@@ -77,12 +81,12 @@ class Agent():
 
         self.memory = ExperienceReplay(input_dims,max_mem_size,self.batch_size)
 
-        self.q_eval = DuelingDeepQNetwork(self.lr, self.n_actions,
+        self.q_eval = DuelingDeepQNetwork(self.lr, self.num_actions,
                                    input_dims=self.input_dims,
                                    name='lunar_lander_dueling_ddqn_q_eval',
                                    chkpt_dir=self.chkpt_dir)
 
-        self.q_next = DuelingDeepQNetwork(self.lr, self.n_actions,
+        self.q_next = DuelingDeepQNetwork(self.lr, self.num_actions,
                                    input_dims=self.input_dims,
                                    name='lunar_lander_dueling_ddqn_q_next',
                                    chkpt_dir=self.chkpt_dir)
@@ -90,6 +94,16 @@ class Agent():
         self.n_states = deque([],self.n)
         self.n_rewards = deque([],self.n)
         self.n_actions = deque([],self.n)
+
+        #self.crop = torchvision.transforms.RandomCrop((84,84),padding=4)
+        #transform = torchvision.transforms.RandomCrop((84,84),padding=4)
+        #self.crop = torchvision.transforms.Lambda(lambda x: torch.stack([transform(x_) for x_ in x]))
+        self.random_shift = nn.Sequential(nn.ReplicationPad2d(4),aug.RandomCrop((84, 84)))
+
+
+
+        self.K = 2
+        self.M = 2
 
     def choose_action(self, observation):
         if np.random.random() > self.epsilon.eps or self.eval_mode:
@@ -151,13 +165,20 @@ class Agent():
         self.q_eval.load_checkpoint()
         self.q_next.load_checkpoint()
 
+    def augment(self,images):
+        #[K,stack_frames,X,Y] ie [2,4,84,84]
+        x = torch.stack([self.crop(i) for i in images],dim=1)
+
+        #save_image(x[0][0][0] / 255,"test0.png")
+        #save_image(x[0][0][1] / 255,"test1.png")
+        return x
+
     def learn(self):
         if self.memory.mem_cntr < self.min_sampling_size:
             return
 
         self.q_eval.optimizer.zero_grad()
 
-        #if self.replace_target_cnt > 1:
         self.replace_target_network()
 
         states,actions,rewards,new_states,dones = self.memory.sample_memory()
@@ -170,19 +191,31 @@ class Agent():
 
         indices = np.arange(self.batch_size)
 
-        V_s, A_s = self.q_eval.forward(states)
+        states_aug = self.random_shift(states)
+        states_aug_ = self.random_shift(states_)
 
-        V_s_, A_s_ = self.q_next.forward(states_)
+        # K = 2
+        V_s, A_s = (self.q_eval.forward(states) + self.q_eval.forward(states_aug)) / 2
+        V_s_, A_s_ = (self.q_eval.forward(states_) + self.q_eval.forward(states_aug_)) / 2
 
-        """if self.replace_target_cnt > 1:
-            V_s_, A_s_ = self.q_next.forward(states_)
-        else:
-            V_s_, A_s_ = self.q_eval.forward(states_)"""
+        """
+        statesM = states.unsqueeze(1).repeat(1, self.M, 1, 1, 1)
+        V_s, A_s = self.q_eval.forward(statesM)
+        A_s = A_s.reshape((self.M,self.batch_size,self.num_actions)).mean(dim=0)
+        V_s = V_s.reshape((self.M,self.batch_size,1)).mean(dim=0)
 
+        states_K = states_.unsqueeze(1).repeat(1, self.K, 1, 1, 1)
+        V_s_, A_s_ = self.q_next.forward(states_K)
+        A_s_ = A_s_.reshape((self.K,self.batch_size,self.num_actions)).mean(dim=0)
+        V_s_ = V_s_.reshape((self.K,self.batch_size,1)).mean(dim=0)
+        """
+
+        #ideal = [32,2,4,84,84]
         V_s_eval, A_s_eval = self.q_eval.forward(states_)
 
         q_pred = T.add(V_s,
                         (A_s - A_s.mean(dim=1, keepdim=True)))[indices, actions]
+
         q_next = T.add(V_s_,
                         (A_s_ - A_s_.mean(dim=1, keepdim=True)))
 

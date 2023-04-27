@@ -6,9 +6,9 @@ class ExperienceReplay:
         self.batch_size = batch_size
         self.mem_cntr = 0
         self.state_memory = np.zeros((self.mem_size, *input_dims),
-                                     dtype=np.float32)
+                                     dtype=np.uint8)
         self.new_state_memory = np.zeros((self.mem_size, *input_dims),
-                                         dtype=np.float32)
+                                         dtype=np.uint8)
         self.action_memory = np.zeros(self.mem_size, dtype=np.int64)
         self.reward_memory = np.zeros(self.mem_size, dtype=np.float32)
         self.terminal_memory = np.zeros(self.mem_size, dtype=np.bool_)
