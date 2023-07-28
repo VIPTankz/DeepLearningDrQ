@@ -38,3 +38,10 @@ Human-Normalised Median:
 This is far exceeded however by the the author's results, claiming a human-normliased median of 0.270
 
 The base of my code was originally based on the code from "Machine Learning with Phil"'s Dueling Double DQN, but has been very heavily modified and udpated since, including the additions of the DrQ paper.
+
+If you wish to to run this code, the environment.yml file is provided to replicate environment (this was done on windows with conda).
+
+To run the agent, just do:
+main.py 0 0 0
+
+This however can take a very long time to run, especially on a regular desktop pc.
