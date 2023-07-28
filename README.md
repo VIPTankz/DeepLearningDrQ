@@ -36,3 +36,5 @@ Human-Normalised Median:
 0.108
 
 This is far exceeded however by the the author's results, claiming a human-normliased median of 0.270
+
+The base of my code was originally based on the code from "Machine Learning with Phil"'s Dueling Double DQN, but has been very heavily modified and udpated since, including the additions of the DrQ paper.
