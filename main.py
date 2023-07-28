@@ -25,37 +25,16 @@ def make_env(game, eval):
 
 if __name__ == '__main__':
 
-    from DrQ_Agent_hacked import Agent
+    from DrQ_Agent import Agent
 
-    agent_name = "DDQN_n1"
+    agent_name = "DrQ"
 
-    """
-    games = ["Alien","Amidar","Assault","Asterix","BankHeist","BattleZone","Boxing","Breakout","ChopperCommand","CrazyClimber",\
+    games = [["Alien","Amidar","Assault","Asterix","BankHeist","BattleZone","Boxing","Breakout","ChopperCommand","CrazyClimber",\
              "DemonAttack","Freeway","Frostbite","Gopher","Hero","Jamesbond","Kangaroo","Krull","KungFuMaster",\
-             "MsPacman","Pong","PrivateEye","Qbert","RoadRunner","Seaquest","UpNDown"]
-    """
-
-    """
-    gameset = [["Alien","Amidar","Assault","Asterix"],["BankHeist","BattleZone","Boxing","Breakout"],
-               ["ChopperCommand","CrazyClimber","DemonAttack","Freeway"],["Frostbite","Gopher","Hero","Jamesbond"],
-               ["Kangaroo","Krull","KungFuMaster","MsPacman"],["Pong","PrivateEye","Qbert"],["RoadRunner","Seaquest","UpNDown"]]
-               
-    currently changed farm_atari to use 6 sets
-    """
-
-    """gameset = [["Alien", "Amidar", "Assault", "Asterix", "BankHeist", "BattleZone", "Boxing"],
-               ["Breakout", "ChopperCommand", "CrazyClimber", "DemonAttack", "Freeway", "Frostbite", "Gopher"],
-               ["Hero", "Jamesbond", "Kangaroo", "Krull", "KungFuMaster", "MsPacman", "Pong"],
-               ["PrivateEye", "Qbert", "RoadRunner", "Seaquest", "UpNDown"]]"""
-
-    gameset = [["Alien", "Amidar", "Assault", "Asterix"], ["BankHeist", "BattleZone", "Boxing", "Breakout"],
-               ["ChopperCommand", "CrazyClimber", "DemonAttack", "Freeway"], ["Frostbite", "Gopher", "Hero", "Jamesbond"],
-               ["Kangaroo", "Krull", "KungFuMaster", "MsPacman"], ["Pong", "PrivateEye", "Qbert", "RoadRunner"],
-               ["Seaquest", "UpNDown"]]
+             "MsPacman","Pong","PrivateEye","Qbert","RoadRunner","Seaquest","UpNDown"]]
 
     gameset_idx = int(sys.argv[1])
 
-    gameset = [["Breakout"]]
 
     games = gameset[gameset_idx]
     print("Currently Playing Games: " + str(games))
@@ -72,7 +51,7 @@ if __name__ == '__main__':
         run_spec = False
 
     for game in games:
-        for runs in range(1):
+        for runs in range(5):
 
             if run_spec:
                 runs += run
