@@ -41,7 +41,7 @@ The base of my code was originally based on the code from "Machine Learning with
 
 If you wish to to run this code, the environment.yml file is provided to replicate environment (this was done on windows with conda).
 
-To run the agent, just do:
+To run the agent, replicate the environment using the environment.yml file and run the follwing command:
 main.py 0 0 0
 
 This however can take a very long time to run, especially on a regular desktop pc.
